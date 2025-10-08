@@ -1,0 +1,153 @@
+# Load necessary libraries
+library(TSP)
+library(fastcluster)
+source("auxiliary_functions.R")
+
+# Load TSP dataset
+datasetname <-"eil51"
+optimum <- 426
+file_path <- paste0("Your file path")
+myrandomseed <- 33 # overall seed, used to derive random seeds in loops
+mydata <- read_TSPLIB(file_path)
+#mydata <- read_geo_tsp(file_path) # reading in GEO type datasets
+#mydata <- read_att_tsp(file_path) # reading in ATT type datasets
+str(mydata)
+
+noise <- 0.5
+restarts <- 5 # number of restarts per run
+reps <- c(1500,1500) # number of runs; first one for "nn" heuristic, second for the rest
+heuristics <- c("nn", "nearest_insertion", "cheapest_insertion", "farthest_insertion")
+shortnames <- c("NN", "NI", "CI", "FI")
+names(shortnames) <- heuristics
+linkage_methods <- c("average", "complete", "single", "ward")
+linkage_short <- c("a","c","s","w") # short names for linkages,must be in the same order!
+
+coords <- as.matrix(mydata)[, 2:3]  # Drop the ID column
+etsp_clean <- ETSP(coords)         # Create a clean ETSP object
+tsp <- TSP(etsp_clean)             # Convert to TSP (distance matrix)
+
+D <- as.matrix(tsp)
+str(tsp)
+#D <- convert_tsp_to_matrix(tsp) # for si tsp datasets only!!!
+d <- as.dist(D)
+(n <- nrow(D))  
+
+# Initialize storage 
+tour_lengths_list <- list() # for tour lengths
+all_tours <- list() # for tours
+time_list <- list() # for run times
+
+### Loops over heuristics and linkages
+beginning <- proc.time()
+for (method in heuristics) { #begin heuristics loop
+  shortname <- shortnames[[method]]
+  begin_loop <- proc.time()
+  
+  # ---- Original Heuristic ----
+  if(method=="nn"){r <- reps[1]}
+  else{r <- reps[2]}
+  start_time <- proc.time()
+  all_tours[[shortname]] <- list()
+  
+  for (i in 1:r) {
+    best_tour <- NULL
+    best_length <- 10^10
+    
+    for(j in 1:restarts) { 
+      seed <- 100*i*myrandomseed+2*j
+      set.seed(seed+2)
+      mytour <- heuristic(tsp, method, restarts=1)
+      current_length <- mytour$path_length
+      current_tour <- mytour$tour
+      if(current_length < best_length){
+        best_length <- current_length
+        best_tour <- current_tour
+      }
+      
+    }
+    
+    tour_lengths_list[[shortname]][i] <- best_length
+    all_tours[[shortname]][[length(all_tours[[shortname]]) + 1]]  <- best_tour 
+    
+  }
+  end_time <- proc.time()
+  
+  time_list[[paste(shortname)]] <-as.numeric((end_time-start_time)[3]/(r*restarts)) 
+  
+  # ---- Tree-Penalty (TP) Heuristics ----
+  for (current_linkage in linkage_methods) { #begin linkages loop
+    # === TP ===
+    key <- paste("tp",linkage_short[which(current_linkage==linkage_methods)], shortname,  sep = "_")
+    start_time <- proc.time()
+    penalty_matrix <- tree_penalty_matrix(d, current_linkage)
+    modified_D <- d + sqrt(d * penalty_matrix)
+    modified_tsp <- TSP(modified_D)
+    all_tours[[key]] <- list()
+    for (i in 1:r) {
+      best_tour <- NULL
+      best_length <- 10^10
+      
+      for(j in 1:restarts) { 
+        seed <- 100*i*myrandomseed+2*j
+        set.seed(seed+2)
+        mytour <- heuristic_tp(modified_tsp, d = tsp, method = method, restarts = 1)
+        current_length <- mytour$path_length
+        current_tour <- mytour$tour
+        if(current_length < best_length){
+          best_length <- current_length
+          best_tour <- current_tour
+        }
+        
+      }
+      
+      tour_lengths_list[[key]][i] <- best_length
+      all_tours[[key]][[length(all_tours[[key]]) + 1]]  <- best_tour 
+    }
+    end_time <- proc.time()
+    time_list[[key]] <-as.numeric((end_time-start_time)[3]/(r*restarts)) 
+    
+    # === TPN ===
+    key_tpn <- paste("tpn",linkage_short[which(current_linkage==linkage_methods)], shortname, sep = "_")
+    all_tours[[key_tpn]] <- list()
+    start_time <- proc.time()
+    for (i in 1:r) {
+      best_tour <- NULL
+      best_length <- 10^10
+      
+      for(j in 1:restarts) { 
+        seed <- 100*i*myrandomseed+2*j
+        set.seed(seed)# seed for noise
+        noise_vector <- runif(length(d), -noise, noise)
+        d_noisy <- d + d * noise_vector
+        penalty_matrix_tpn <- tree_penalty_matrix(d_noisy, current_linkage)
+        modified_D_tpn <- d + sqrt(d * penalty_matrix_tpn)
+        modified_tsp_tpn <- TSP(modified_D_tpn)
+        set.seed(seed+2)
+        mytour <- heuristic_tp(modified_tsp_tpn, d = tsp, method = method, restarts = 1)
+        current_length <- mytour$path_length
+        current_tour <- mytour$tour
+          if(current_length < best_length){
+           best_length <- current_length
+           best_tour <- current_tour
+           }
+        
+       }
+      
+      tour_lengths_list[[key_tpn]][i] <- best_length
+      all_tours[[key_tpn]][[length(all_tours[[key_tpn]]) + 1]]  <- best_tour 
+
+    }
+    end_time <- proc.time()
+    time_list[[key_tpn]] <-as.numeric((end_time-start_time)[3]/(r*restarts)) 
+    
+    
+  }  #end linkages loop
+  end_loop <- proc.time()
+  loop_time <- (end_loop-begin_loop)[3]
+  print(paste("Finished", shortname, "heuristic in",loop_time,"seconds"))
+  
+}  #end heuristics loop
+
+## Total time elapsed
+ending <- proc.time()
+paste("Total time elapsed:", round((ending-beginning)[3],2))

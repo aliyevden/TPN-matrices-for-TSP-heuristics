@@ -1,0 +1,164 @@
+# Tree Penalty Matrix function
+tree_penalty_matrix <- function(d, linkage) { # make sure to use library(fastcluster) in the main code
+  if (linkage == "ward") {
+    linkage = "ward.D2"
+  }
+  hc <- hclust(d, method = linkage)
+  penalty_matrix <- cophenetic(hc)  
+  PM <- penalty_matrix * mean(d) / mean(penalty_matrix)  # Normalized penalty matrix
+  return(PM)
+}
+
+# Function to compute percentage gap using minimum tour length
+compute_tsp_percentage_gap <- function(min_length, optimal_length) {
+  return(round(((min_length - optimal_length) / optimal_length) * 100, 2))  # Rounded to 2 decimal places
+}
+# function that runs a given TSP heuristic restarts times per iteration
+heuristic <- function(tsp, method,restarts) {
+  tour <- solve_TSP(tsp, method = method,control = list(rep = restarts,two_opt=0))
+  path_length <- tour_length(tour)
+  return(list(tour = tour, path_length = path_length))
+}
+
+heuristic_tp <- function(tsp, d,method, restarts) { 
+  # tsp=tsp object, d=original dist matrix;method=TSP heuristic,restarts=# of runs per iteration
+  tour <- solve_TSP(tsp, method = method, control = list(rep = restarts,two_opt=0))
+  path_length <- tour_length(tour,tsp=d)
+  return(list(tour = tour, path_length = path_length))
+}
+
+heuristic_tpn <- function(tsp, d,method, restarts,noise) { 
+  # tsp=tsp object, d=original dist matrix;method=TSP heuristic,restarts=# of runs per iteration
+  tour <- solve_TSP(tsp, method = method, control = list(rep = restarts,two_opt=0))
+  path_length <- tour_length(tour,tsp=d)
+  return(list(tour = tour, path_length = path_length))
+}
+
+# Function to extract method name (last part of the name)
+get_method <- function(name) {
+  parts <- strsplit(name, "_")[[1]]
+  tail(parts, 1)
+}
+
+# Handling ATT type files
+read_att_tsp <- function(file_path) {
+  # Read the file
+  lines <- readLines(file_path)
+  
+  # Extract coordinates
+  start <- grep("NODE_COORD_SECTION", lines) + 1
+  end <- grep("EOF", lines) - 1
+  coords <- lines[start:end]
+  coords <- do.call(rbind, strsplit(coords, "\\s+"))
+  coords <- as.data.frame(coords[, -1], stringsAsFactors = FALSE)
+  coords <- apply(coords, 2, as.numeric)
+  
+  # ATT distance function
+  att_distance <- function(x1, y1, x2, y2) {
+    rij <- sqrt(((x1 - x2)^2 + (y1 - y2)^2) / 10)
+    tij <- round(rij)
+    if (tij < rij) tij <- tij + 1
+    return(tij)
+  }
+  
+  # Create distance matrix
+  n <- nrow(coords)
+  distance_matrix <- matrix(0, n, n)
+  for (i in 1:n) {
+    for (j in 1:n) {
+      if (i != j) {
+        distance_matrix[i, j] <- att_distance(coords[i, 1], coords[i, 2], coords[j, 1], coords[j, 2])
+      }
+    }
+  }
+  
+  # Return TSP object
+  return(TSP(distance_matrix))
+}
+
+# ### Function to read in GEO type dataset
+read_geo_tsp <- function(file_path) {
+  library(fields)
+  lines <- readLines(file_path)
+
+  # Constants
+  PI <- 3.141592
+  RRR <- 6378.388
+
+  # Find the start of the NODE_COORD_SECTION
+  start_idx <- grep("NODE_COORD_SECTION", lines)
+  if (length(start_idx) == 0) stop("NODE_COORD_SECTION not found.")
+
+  # Read coordinate lines and clean them
+  coord_lines <- lines[(start_idx + 1):length(lines)]
+  coord_lines <- coord_lines[!grepl("EOF", coord_lines)]
+  coord_lines <- coord_lines[nzchar(trimws(coord_lines))]  # Remove empty lines
+
+  # Parse coordinates
+  coords <- lapply(coord_lines, function(line) {
+    parts <- unlist(strsplit(trimws(line), "\\s+"))
+    if (length(parts) >= 3) {
+      x <- as.numeric(parts[2])
+      y <- as.numeric(parts[3])
+
+
+      deg_x <- as.integer(x)
+      min_x <- x - deg_x
+      latitude <- PI * (deg_x + 5.0 * min_x / 3.0) / 180.0
+
+      deg_y <- as.integer(y)
+      min_y <- y - deg_y
+      longitude <- PI * (deg_y + 5.0 * min_y / 3.0) / 180.0
+
+      return(c(latitude, longitude))
+    } else {
+      return(NULL)
+    }
+  })
+
+  # Filter out any NULLs
+  coords <- do.call(rbind, coords[!sapply(coords, is.null)])
+
+  if (nrow(coords) < 2) {
+    stop("Insufficient valid coordinates found.")
+  }
+
+  # Compute distance matrix using TSPLIB GEO formula
+  n <- nrow(coords)
+  dist_matrix <- matrix(0, n, n)
+
+  for (i in 1:n) {
+    for (j in 1:n) {
+      if (i != j) {
+        lat_i <- coords[i, 1]
+        lon_i <- coords[i, 2]
+        lat_j <- coords[j, 1]
+        lon_j <- coords[j, 2]
+
+        q1 <- cos(lon_i - lon_j)
+        q2 <- cos(lat_i - lat_j)
+        q3 <- cos(lat_i + lat_j)
+
+        dij <- RRR * acos(0.5 * ((1.0 + q1) * q2 - (1.0 - q1) * q3))
+        dist_matrix[i, j] <- as.integer(dij) + 1.0
+      }
+    }
+  }
+
+  return(dist_matrix)
+}
+
+### converting tsp obj lower triangular dist matrix to matrix
+convert_tsp_to_matrix <- function(tsp_obj) {
+  n <- attr(tsp_obj, "Size")
+  dist_matrix <- matrix(0, nrow = n, ncol = n)
+  
+  # Fill the lower triangle including the diagonal
+  dist_matrix[lower.tri(dist_matrix, diag = TRUE)] <- tsp_obj
+  
+  # Mirror to upper triangle
+  dist_matrix <- dist_matrix + t(dist_matrix) - diag(diag(dist_matrix))
+
+  
+  return(dist_matrix)
+}
