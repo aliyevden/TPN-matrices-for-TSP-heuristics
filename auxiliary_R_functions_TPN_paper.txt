@@ -9,10 +9,6 @@ tree_penalty_matrix <- function(d, linkage) { # make sure to use library(fastclu
   return(PM)
 }
 
-# Function to compute percentage gap using minimum tour length
-compute_tsp_percentage_gap <- function(min_length, optimal_length) {
-  return(round(((min_length - optimal_length) / optimal_length) * 100, 2))  # Rounded to 2 decimal places
-}
 # function that runs a given TSP heuristic restarts times per iteration
 heuristic <- function(tsp, method,restarts) {
   tour <- solve_TSP(tsp, method = method,control = list(rep = restarts,two_opt=0))
@@ -27,18 +23,6 @@ heuristic_tp <- function(tsp, d,method, restarts) {
   return(list(tour = tour, path_length = path_length))
 }
 
-heuristic_tpn <- function(tsp, d,method, restarts,noise) { 
-  # tsp=tsp object, d=original dist matrix;method=TSP heuristic,restarts=# of runs per iteration
-  tour <- solve_TSP(tsp, method = method, control = list(rep = restarts,two_opt=0))
-  path_length <- tour_length(tour,tsp=d)
-  return(list(tour = tour, path_length = path_length))
-}
-
-# Function to extract method name (last part of the name)
-get_method <- function(name) {
-  parts <- strsplit(name, "_")[[1]]
-  tail(parts, 1)
-}
 
 # Handling ATT type files
 read_att_tsp <- function(file_path) {
@@ -162,3 +146,4 @@ convert_tsp_to_matrix <- function(tsp_obj) {
   
   return(dist_matrix)
 }
+
