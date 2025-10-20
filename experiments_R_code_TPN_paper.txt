@@ -28,7 +28,6 @@ tsp <- TSP(etsp_clean)             # Convert to TSP (distance matrix)
 
 D <- as.matrix(tsp)
 str(tsp)
-#D <- convert_tsp_to_matrix(tsp) # for si tsp datasets only!!!
 d <- as.dist(D)
 (n <- nrow(D))  
 
@@ -150,4 +149,5 @@ for (method in heuristics) { #begin heuristics loop
 
 ## Total time elapsed
 ending <- proc.time()
+
 paste("Total time elapsed:", round((ending-beginning)[3],2))
