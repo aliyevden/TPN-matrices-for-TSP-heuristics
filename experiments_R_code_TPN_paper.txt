@@ -22,7 +22,7 @@ names(shortnames) <- heuristics
 linkage_methods <- c("average", "complete", "single", "ward")
 linkage_short <- c("a","c","s","w") # short names for linkages,must be in the same order!
 
-coords <- as.matrix(mydata)[, 2:3]  # Drop the ID column
+coords <- as.matrix(mydata)        #save the coordinates in matrix form
 etsp_clean <- ETSP(coords)         # Create a clean ETSP object
 tsp <- TSP(etsp_clean)             # Convert to TSP (distance matrix)
 
@@ -151,3 +151,4 @@ for (method in heuristics) { #begin heuristics loop
 ending <- proc.time()
 
 paste("Total time elapsed:", round((ending-beginning)[3],2))
+
